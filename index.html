@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>萬聖節驚魂：方塊戰場 TPS (完整修復版)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Verdana', sans-serif; user-select: none; }
+        
+        /* 準心 */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40px;
+            height: 40px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        #crosshair::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border: 2px solid rgba(0, 255, 0, 0.8);
+            border-radius: 50%;
+            width: 20px; height: 20px;
+            margin: auto;
+        }
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 4px; height: 4px;
+            background: rgba(0, 255, 0, 0.9);
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+        }
+
+        /* UI 層 */
+        #uiLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            font-size: 24px;
+            font-weight: 800;
+            color: white;
+            text-shadow: 2px 2px 0 #000;
+        }
+        /* 新增關卡資訊樣式 */
+        #levelInfo {
+            font-size: 28px;
+            color: #ff00ff;
+            text-shadow: 2px 2px 4px #000;
+            margin-bottom: 5px;
+        }
+        #weaponInfo {
+            text-align: center;
+            color: #ffcc00;
+            font-size: 20px;
+            margin-top: 5px;
+            text-shadow: 1px 1px 2px #000;
+        }
+        #healthBarContainer {
+            width: 300px;
+            height: 30px;
+            background-color: #333;
+            border: 2px solid #fff;
+            position: relative;
+        }
+        #healthBar {
+            width: 100%;
+            height: 100%;
+            background-color: #00ff00;
+            transition: width 0.2s;
+        }
+        #healthText {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+            text-shadow: 1px 1px 3px #000;
+            z-index: 5;
+        }
+        #squadStatus {
+            font-size: 18px;
+            color: #00a2ff;
+            text-shadow: 1px 1px 2px #000;
+            text-align: right;
+        }
+
+        /* 畫面遮罩 */
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            z-index: 20;
+            color: white;
+        }
+        h1 {
+            font-size: 64px; color: #ff9900; margin-bottom: 20px;
+            text-shadow: 4px 4px 0px #880000; font-family: 'Arial Black', sans-serif;
+            text-transform: uppercase;
+        }
+        p { font-size: 20px; color: #eee; margin-bottom: 40px; text-align: center; line-height: 1.6; }
+        .btn {
+            background-color: #00a2ff; border: 4px solid #005f99;
+            padding: 15px 40px; font-size: 28px; color: white; cursor: pointer;
+            border-radius: 6px; font-family: 'Arial Black', sans-serif;
+            box-shadow: 0 6px 0 #005f99; transition: transform 0.1s;
+        }
+        .btn:hover { transform: translateY(-2px); background-color: #33b5ff; }
+        .hidden { display: none !important; }
+        .highlight { color: #ffcc00; }
+    </style>
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+
+    <div id="uiLayer">
+        <div class="hud-top">
+            <div>
+                <div id="scoreDisplay">SCORE: 0</div>
+                <div id="squadStatus">隊友存活: 2</div>
+            </div>
+            <!-- 中間顯示關卡與武器 -->
+            <div style="display:flex; flex-direction:column; align-items:center;">
+                 <div id="levelInfo">LEVEL 1</div>
+                 <div id="weaponInfo">武器: 手槍 (Lv.1)</div>
+            </div>
+            <div id="healthBarContainer">
+                <div id="healthBar"></div>
+                <div id="healthText">100 / 100</div>
+            </div>
+        </div>
+        <!-- 關卡訊息通知 -->
+        <div id="levelMessage" style="position:absolute; top:30%; width:100%; text-align:center; display:none;">
+            <h1 id="levelTitle" style="font-size:80px; color:#fff; text-shadow:0 0 20px #ff00ff;">LEVEL COMPLETE</h1>
+        </div>
+    </div>
+
+    <div id="startScreen">
+        <h1>特種小隊 TPS</h1>
+        <p>
+            <span class="highlight">WASD</span> 移動<br>
+            <span class="highlight">滑鼠</span> 視角<br>
+            <span class="highlight">空白鍵</span> 射擊<br>
+            挑戰 3 個恐怖關卡！每 10 殺升級武器！
+        </p>
+        <button class="btn" id="startBtn">集結小隊</button>
+    </div>
+
+    <div id="gameOverScreen" class="hidden">
+        <h1 id="endTitle" style="color: #ff9900;">任務失敗</h1>
+        <p id="finalScore" style="font-size: 30px;">SCORE: 0</p>
+        <button class="btn" id="restartBtn">重新部署</button>
+    </div>
+
+    <script>
+        // --- 遊戲變數 ---
+        let camera, scene, renderer;
+        let player = { 
+            health: 100, maxHealth: 100, speed: 0.2, 
+            mesh: null, cameraPivot: null, gunMesh: null,
+            velocity: new THREE.Vector3(),
+            direction: new THREE.Vector3(),
+            parts: {}, isDead: false,
+            killCount: 0,
+            weaponIndex: 0,
+            lastShotTime: 0
+        };
+        // 關卡系統變數
+        let currentLevel = 1;
+        let levelKills = 0;
+        const levelConfig = [
+            { target: 15, spawnRateBase: 120, bgColor: 0x2a1a3e, fogColor: 0x2a1a3e, name: "墓地外圍" }, // Level 1
+            { target: 30, spawnRateBase: 80, bgColor: 0x3e1a1a, fogColor: 0x3e1a1a, name: "血色庭院" }, // Level 2
+            { target: 50, spawnRateBase: 50, bgColor: 0x052205, fogColor: 0x052205, name: "幽冥深淵" }  // Level 3
+        ];
+        
+        let allies = []; 
+        let flashLight;
+        let enemies = [];
+        let particles = [];
+        let bullets = [];
+        let score = 0;
+        let isGameActive = false;
+        let lastTime = 0;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let canShoot = true;
+
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const squadStatus = document.getElementById('squadStatus');
+        const levelInfo = document.getElementById('levelInfo');
+        const levelMessage = document.getElementById('levelMessage');
+        const levelTitle = document.getElementById('levelTitle');
+        const weaponInfo = document.getElementById('weaponInfo');
+        const healthBar = document.getElementById('healthBar');
+        const healthText = document.getElementById('healthText');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const endTitle = document.getElementById('endTitle');
+        const startBtn = document.getElementById('startBtn');
+        const restartBtn = document.getElementById('restartBtn');
+
+        function init() {
+            scene = new THREE.Scene();
+            // 初始背景 (Level 1)
+            scene.background = new THREE.Color(levelConfig[0].bgColor);
+            scene.fog = new THREE.FogExp2(levelConfig[0].fogColor, 0.015);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            const floorSize = 200;
+            const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize);
+            const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.8 });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            const gridHelper = new THREE.GridHelper(floorSize, 50, 0x664488, 0x443355);
+            scene.add(gridHelper);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const moonLight = new THREE.DirectionalLight(0xaaccff, 0.8);
+            moonLight.position.set(50, 100, 50);
+            moonLight.castShadow = true;
+            moonLight.shadow.camera.left = -50;
+            moonLight.shadow.camera.right = 50;
+            moonLight.shadow.camera.top = 50;
+            moonLight.shadow.camera.bottom = -50;
+            moonLight.shadow.mapSize.width = 2048;
+            moonLight.shadow.mapSize.height = 2048;
+            scene.add(moonLight);
+
+            createPlayer();
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('mousedown', onMouseDown);
+        }
+
+        // --- 創建方塊人 (共用函數，用於玩家和隊友) ---
+        function createCharacterMesh(colorConfig) {
+            const group = new THREE.Group();
+            
+            // 身體
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(0.6, 0.7, 0.3),
+                new THREE.MeshStandardMaterial({ color: colorConfig.body })
+            );
+            body.position.y = 0.95;
+            body.castShadow = true;
+            group.add(body);
+
+            // 頭部
+            const head = new THREE.Mesh(
+                new THREE.BoxGeometry(0.5, 0.5, 0.5),
+                new THREE.MeshStandardMaterial({ color: colorConfig.skin })
+            );
+            head.position.y = 1.6;
+            head.castShadow = true;
+            group.add(head);
+
+            // 墨鏡/裝備
+            const glasses = new THREE.Mesh(
+                new THREE.BoxGeometry(0.52, 0.15, 0.1),
+                new THREE.MeshStandardMaterial({ color: 0x000000 })
+            );
+            glasses.position.set(0, 1.6, 0.22);
+            group.add(glasses);
+
+            // 手腳材質
+            const limbMat = new THREE.MeshStandardMaterial({ color: colorConfig.limb || colorConfig.skin });
+            const pantsMat = new THREE.MeshStandardMaterial({ color: colorConfig.pants });
+
+            // 手臂
+            const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
+            const leftArm = new THREE.Mesh(armGeo, limbMat);
+            leftArm.position.set(-0.45, 0.95, 0);
+            group.add(leftArm);
+            
+            const rightArm = new THREE.Mesh(armGeo, limbMat);
+            rightArm.position.set(0.45, 0.95, 0.2);
+            rightArm.rotation.x = -Math.PI / 4;
+            group.add(rightArm);
+
+            // 腿部
+            const legGeo = new THREE.BoxGeometry(0.25, 0.7, 0.25);
+            const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+            leftLeg.position.set(-0.15, 0.35, 0);
+            group.add(leftLeg);
+            
+            const rightLeg = new THREE.Mesh(legGeo, pantsMat);
+            rightLeg.position.set(0.15, 0.35, 0);
+            group.add(rightLeg);
+
+            // 槍
+            const gunGroup = new THREE.Group();
+            const gunMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.6), gunMat);
+            gunBody.position.z = 0.2;
+            const gunBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.4), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            gunBarrel.position.z = -0.3;
+            gunGroup.add(gunBody, gunBarrel);
+            gunGroup.position.set(0, -0.3, 0.3);
+            gunGroup.rotation.x = -Math.PI / 4;
+            rightArm.add(gunGroup);
+
+            gunGroup.userData = { bodyMat: gunMat };
+
+            return {
+                mesh: group,
+                parts: { leftArm, rightArm, leftLeg, rightLeg },
+                gunMesh: gunGroup
+            };
+        }
+
+        function createPlayer() {
+            const playerVisuals = createCharacterMesh({
+                body: 0x111111, skin: 0xffcc00, pants: 0x333333, limb: 0xffcc00
+            });
+            player.mesh = playerVisuals.mesh;
+            player.parts = playerVisuals.parts;
+            player.gunMesh = playerVisuals.gunMesh;
+
+            scene.add(player.mesh);
+            
+            updateWeapon();
+
+            player.cameraPivot = new THREE.Object3D();
+            player.cameraPivot.position.y = 1.6;
+            scene.add(player.cameraPivot);
+            player.cameraPivot.add(camera);
+            camera.position.set(1.5, 0.5, 3.5);
+            camera.lookAt(player.cameraPivot.position.clone().add(new THREE.Vector3(1.5, 0, -5)));
+
+            flashLight = new THREE.SpotLight(0xffffff, 1.2);
+            flashLight.position.set(1.5, 0.5, 0);
+            flashLight.angle = Math.PI / 5;
+            flashLight.castShadow = true;
+            player.cameraPivot.add(flashLight);
+            player.cameraPivot.add(flashLight.target);
+            flashLight.target.position.set(1.5, 0, -10);
+        }
+
+        // --- 關卡系統邏輯 ---
+        function checkLevelProgression() {
+            const config = levelConfig[currentLevel - 1];
+            if (levelKills >= config.target) {
+                if (currentLevel < 3) {
+                    nextLevel();
+                } else {
+                    victory();
+                }
+            } else {
+                // 更新 UI 顯示進度
+                levelInfo.innerText = `LEVEL ${currentLevel}: ${levelKills}/${config.target}`;
+            }
+        }
+
+        function nextLevel() {
+            currentLevel++;
+            levelKills = 0;
+            const config = levelConfig[currentLevel - 1];
+            
+            // 顯示過關訊息
+            levelMessage.style.display = 'block';
+            levelTitle.innerText = `進入 ${config.name}`;
+            levelTitle.style.color = '#ffff00';
+            
+            setTimeout(() => {
+                levelMessage.style.display = 'none';
+            }, 3000);
+
+            // 改變環境氣氛
+            scene.background = new THREE.Color(config.bgColor);
+            scene.fog.color.setHex(config.fogColor);
+
+            // 補滿血量作為獎勵
+            player.health = 100;
+            updateHealthUI();
+            allies.forEach(a => {
+                if (!a.isDead) {
+                    a.hp = a.maxHp;
+                    a.updateHealthUI(); 
+                }
+            });
+            
+            // UI 更新
+            levelInfo.innerText = `LEVEL ${currentLevel}: 0/${config.target}`;
+        }
+
+        function victory() {
+            gameState = 'GAMEOVER';
+            isGameActive = false;
+            try { document.exitPointerLock(); } catch(e){}
+            gameOverScreen.classList.remove('hidden');
+            endTitle.innerText = "任務完成！";
+            endTitle.style.color = "#00ff00";
+            finalScoreDisplay.innerText = `最終分數: ${score}`;
+        }
+
+        // --- 武器系統 ---
+        const weapons = [
+            // 手槍射速改為 100ms
+            { name: "手槍", color: 0x888888, fireRate: 100, damage: 1, speed: 2, scale: 1, type: 'single' },
+            { name: "衝鋒槍", color: 0x0088ff, fireRate: 80, damage: 0.6, speed: 2.5, scale: 0.8, type: 'single' },
+            { name: "散彈槍", color: 0xff3300, fireRate: 600, damage: 0.8, speed: 1.8, scale: 1, type: 'shotgun' },
+            { name: "狙擊槍", color: 0x00ff00, fireRate: 1000, damage: 5, speed: 5, scale: 1.2, type: 'sniper' },
+            { name: "虛空機槍", color: 0xaa00ff, fireRate: 50, damage: 0.5, speed: 3, scale: 1.5, type: 'single' }
+        ];
+
+        function updateWeapon() {
+            const level = Math.floor(player.killCount / 10);
+            const idx = Math.min(level, weapons.length - 1);
+            player.weaponIndex = idx;
+            const weapon = weapons[idx];
+
+            weaponInfo.innerText = `武器: ${weapon.name} (Lv.${level+1})`;
+            weaponInfo.style.color = '#' + weapon.color.toString(16).padStart(6, '0');
+
+            if (player.gunMesh && player.gunMesh.userData.bodyMat) {
+                player.gunMesh.userData.bodyMat.color.setHex(weapon.color);
+            }
+        }
+
+        // --- 隊友類別 ---
+        class Ally {
+            constructor(offsetX, offsetZ) {
+                const visuals = createCharacterMesh({
+                    body: 0x003366, skin: 0xffcc00, pants: 0x002244, limb: 0x003366
+                });
+                this.mesh = visuals.mesh;
+                this.parts = visuals.parts;
+                this.gunMesh = visuals.gunMesh;
+
+                this.mesh.position.set(offsetX, 0, offsetZ);
+                scene.add(this.mesh);
+
+                this.hp = 5;
+                this.maxHp = 5;
+                this.isDead = false;
+                this.speed = 0.18;
+                this.lastShotTime = 0;
+                
+                this.createHealthBar();
+            }
+
+            createHealthBar() {
+                const bg = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.05), new THREE.MeshBasicMaterial({color: 0x000000}));
+                const fg = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.06), new THREE.MeshBasicMaterial({color: 0x0088ff}));
+                this.healthBar = fg;
+                const group = new THREE.Group();
+                group.add(bg, fg);
+                group.position.y = 2.2;
+                this.mesh.add(group);
+            }
+            
+            // 新增更新血條方法
+            updateHealthUI() {
+                const pct = Math.max(0, this.hp / this.maxHp);
+                this.healthBar.scale.x = pct;
+                this.healthBar.position.x = - (1 - pct) * 0.8 / 2;
+                this.healthBar.material.color.setHex(0x0088ff);
+            }
+
+            update(playerPos, enemies) {
+                if (this.isDead) return;
+
+                let nearestEnemy = null;
+                let minDist = 999;
+                
+                for(let e of enemies) {
+                    if(!e.isDead) {
+                        const d = this.mesh.position.distanceTo(e.mesh.position);
+                        if(d < minDist) {
+                            minDist = d;
+                            nearestEnemy = e;
+                        }
+                    }
+                }
+
+                if (nearestEnemy && minDist < 20) {
+                    this.mesh.lookAt(nearestEnemy.mesh.position);
+                    if (minDist > 8) {
+                         const dir = new THREE.Vector3().subVectors(nearestEnemy.mesh.position, this.mesh.position).normalize();
+                         this.mesh.position.add(dir.multiplyScalar(this.speed * 0.5));
+                         this.animateWalk(true);
+                    } else if (minDist < 4) {
+                         const dir = new THREE.Vector3().subVectors(this.mesh.position, nearestEnemy.mesh.position).normalize();
+                         this.mesh.position.add(dir.multiplyScalar(this.speed * 0.5));
+                         this.animateWalk(true);
+                    } else {
+                        this.animateWalk(false);
+                    }
+
+                    const now = Date.now();
+                    if (now - this.lastShotTime > 800) {
+                        this.shoot(nearestEnemy);
+                        this.lastShotTime = now;
+                    }
+                } else {
+                    const distToPlayer = this.mesh.position.distanceTo(playerPos);
+                    if (distToPlayer > 4) {
+                        this.mesh.lookAt(playerPos);
+                        const dir = new THREE.Vector3().subVectors(playerPos, this.mesh.position).normalize();
+                        this.mesh.position.add(dir.multiplyScalar(this.speed));
+                        this.animateWalk(true);
+                    } else {
+                        this.animateWalk(false);
+                    }
+                }
+            }
+
+            animateWalk(isWalking) {
+                if(isWalking) {
+                    const t = Date.now() * 0.015;
+                    this.parts.leftLeg.rotation.x = Math.sin(t) * 0.5;
+                    this.parts.rightLeg.rotation.x = -Math.sin(t) * 0.5;
+                } else {
+                    this.parts.leftLeg.rotation.x = 0;
+                    this.parts.rightLeg.rotation.x = 0;
+                }
+            }
+
+            shoot(target) {
+                this.parts.rightArm.rotation.x -= 0.2;
+                setTimeout(() => this.parts.rightArm.rotation.x += 0.2, 100);
+
+                const gunPos = new THREE.Vector3();
+                this.gunMesh.children[1].getWorldPosition(gunPos);
+                
+                const targetPos = target.mesh.position.clone();
+                targetPos.y += 1.0;
+                targetPos.x += (Math.random() - 0.5) * 1.0; 
+
+                const dir = new THREE.Vector3().subVectors(targetPos, gunPos).normalize();
+
+                const geo = new THREE.BoxGeometry(0.1, 0.1, 0.6);
+                const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+                const bMesh = new THREE.Mesh(geo, mat);
+                bMesh.position.copy(gunPos);
+                bMesh.lookAt(targetPos);
+                scene.add(bMesh);
+                bullets.push({ mesh: bMesh, velocity: dir.multiplyScalar(2), life: 30 });
+
+                const raycaster = new THREE.Raycaster(gunPos, dir);
+                const hits = raycaster.intersectObject(target.mesh, true);
+                if(hits.length > 0) {
+                    if(target.takeDamage(0.5)) {
+                        score += 50; 
+                        scoreDisplay.innerText = `SCORE: ${score}`;
+                    } else {
+                        createExplosion(hits[0].point, 0xffff00);
+                    }
+                }
+            }
+            
+            takeDamage(amount) {
+                this.hp -= amount;
+                const pct = Math.max(0, this.hp / this.maxHp);
+                this.healthBar.scale.x = pct;
+                this.healthBar.position.x = - (1 - pct) * 0.8 / 2;
+                
+                this.mesh.children.forEach(c => {
+                   if(c.material) c.material.emissive = new THREE.Color(0xff0000);
+                });
+                setTimeout(() => {
+                    if(!this.isDead) this.mesh.children.forEach(c => {
+                       if(c.material) c.material.emissive = new THREE.Color(0x000000);
+                    });
+                }, 100);
+
+                if(this.hp <= 0) {
+                    this.isDead = true;
+                    scene.remove(this.mesh);
+                    createExplosion(this.mesh.position, 0x0088ff);
+                    updateSquadStatus();
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        // --- 敵人系統 ---
+        class Enemy {
+            constructor(type) {
+                this.type = type;
+                this.mesh = new THREE.Group();
+                this.isDead = false;
+
+                let color, speed;
+                if (type === 'ghost') {
+                    color = 0xaa00ff;
+                    speed = 0.06 + Math.random() * 0.04;
+                    this.hp = 2;
+                    this.maxHp = 2;
+                    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: color, transparent: true, opacity: 0.8 }));
+                    this.mesh.add(head);
+                    this.mesh.position.y = 2;
+                } else {
+                    color = 0x558833;
+                    speed = 0.04 + Math.random() * 0.03;
+                    this.hp = 3;
+                    this.maxHp = 3;
+                    const mat = new THREE.MeshStandardMaterial({ color: color });
+                    const shirtMat = new THREE.MeshStandardMaterial({ color: 0x0055aa });
+                    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mat);
+                    head.position.y = 1.5;
+                    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.3), shirtMat);
+                    body.position.y = 0.9;
+                    const arms = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.2, 0.2), mat);
+                    arms.position.set(0, 0.9, 0.3);
+                    this.mesh.add(head, body, arms);
+                    this.mesh.position.y = 0;
+                }
+                this.speed = speed;
+                this.createHealthBar(type === 'ghost' ? 2.6 : 2.1);
+
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 30 + Math.random() * 10;
+                this.mesh.position.x = Math.cos(angle) * radius;
+                this.mesh.position.z = Math.sin(angle) * radius;
+                this.mesh.castShadow = true;
+                scene.add(this.mesh);
+            }
+
+            createHealthBar(y) {
+                const bg = new THREE.Mesh(new THREE.BoxGeometry(1, 0.15, 0.05), new THREE.MeshBasicMaterial({color: 0x330000}));
+                const fg = new THREE.Mesh(new THREE.BoxGeometry(1, 0.15, 0.06), new THREE.MeshBasicMaterial({color: 0x00ff00}));
+                this.hpBar = fg;
+                const g = new THREE.Group();
+                g.add(bg, fg);
+                g.position.y = y;
+                this.mesh.add(g);
+            }
+
+            update(targets) {
+                if (this.isDead) return;
+
+                let target = null;
+                let minDist = 999;
+
+                targets.forEach(t => {
+                    let dist = 999;
+                    let alive = false;
+                    
+                    if (t.mesh) {
+                        if (t === player) alive = !player.isDead && player.health > 0;
+                        else alive = !t.isDead;
+
+                        if (alive) {
+                            dist = this.mesh.position.distanceTo(t.mesh.position);
+                            if (dist < minDist) {
+                                minDist = dist;
+                                target = t;
+                            }
+                        }
+                    }
+                });
+
+                if (target) {
+                    const targetPos = target.mesh.position;
+                    this.mesh.lookAt(targetPos.x, this.type === 'ghost' ? 2 : 0.9, targetPos.z);
+                    const dir = new THREE.Vector3().subVectors(targetPos, this.mesh.position).normalize();
+                    if (this.type !== 'ghost') dir.y = 0;
+                    this.mesh.position.add(dir.multiplyScalar(this.speed));
+
+                    if (minDist < 1.0) {
+                        if (target === player) {
+                            player.health -= 0.5;
+                            updateHealthUI();
+                            if(player.health <= 0 && !player.isDead) gameOver();
+                        } else {
+                            target.takeDamage(0.1);
+                        }
+                    }
+                }
+                
+                if (this.type !== 'ghost') this.mesh.position.y = Math.abs(Math.sin(Date.now() * 0.005)) * 0.2;
+                else this.mesh.position.y = 2 + Math.sin(Date.now() * 0.003) * 0.5;
+            }
+
+            takeDamage(amount) {
+                this.hp -= (amount || 1);
+                const pct = Math.max(0, this.hp / this.maxHp);
+                this.hpBar.scale.x = pct;
+                this.hpBar.position.x = - (1 - pct) * 0.5;
+                if(pct < 0.4) this.hpBar.material.color.setHex(0xff0000);
+
+                this.mesh.children.forEach(c => {
+                   if(c.material) c.material.emissive = new THREE.Color(0xffffff);
+                });
+                setTimeout(() => {
+                    if(!this.isDead) this.mesh.children.forEach(c => {
+                       if(c.material) c.material.emissive = new THREE.Color(0x000000);
+                    });
+                }, 100);
+
+                if (this.hp <= 0) {
+                    this.die();
+                    return true;
+                }
+                return false;
+            }
+
+            die() {
+                this.isDead = true;
+                scene.remove(this.mesh);
+                createExplosion(this.mesh.position, this.type === 'ghost' ? 0xaa00ff : 0x558833);
+            }
+        }
+
+        function createExplosion(pos, color) {
+            const count = 8;
+            for (let i = 0; i < count; i++) {
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2), new THREE.MeshBasicMaterial({color:color}));
+                mesh.position.copy(pos);
+                scene.add(mesh);
+                particles.push({
+                    mesh: mesh,
+                    velocity: new THREE.Vector3((Math.random()-0.5)*0.5, Math.random()*0.5, (Math.random()-0.5)*0.5),
+                    life: 1.0
+                });
+            }
+        }
+
+        function shoot() {
+            if (!canShoot || !isGameActive || player.isDead) return;
+
+            const now = Date.now();
+            const weapon = weapons[player.weaponIndex];
+
+            if (now - player.lastShotTime < weapon.fireRate) return;
+            player.lastShotTime = now;
+            
+            player.parts.rightArm.rotation.x -= 0.2;
+            setTimeout(() => player.parts.rightArm.rotation.x += 0.2, 100);
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            
+            let gunPos = new THREE.Vector3();
+            player.gunMesh.children[1].getWorldPosition(gunPos);
+
+            let targetPoint = new THREE.Vector3();
+            raycaster.ray.at(100, targetPoint); 
+
+            const hitObjects = enemies.map(e => e.mesh);
+            const intersects = raycaster.intersectObjects([...hitObjects], true);
+            
+            if (intersects.length > 0) {
+                targetPoint.copy(intersects[0].point);
+            }
+
+            const baseDir = new THREE.Vector3().subVectors(targetPoint, gunPos).normalize();
+            
+            if (weapon.type === 'shotgun') {
+                for (let i = 0; i < 5; i++) {
+                    const spread = 0.15;
+                    const dir = baseDir.clone();
+                    dir.x += (Math.random() - 0.5) * spread;
+                    dir.y += (Math.random() - 0.5) * spread;
+                    dir.z += (Math.random() - 0.5) * spread;
+                    dir.normalize();
+                    createBullet(gunPos, dir, weapon);
+                }
+            } else {
+                createBullet(gunPos, baseDir, weapon);
+            }
+        }
+
+        function createBullet(startPos, direction, weapon) {
+            const bMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(0.1 * weapon.scale, 0.1 * weapon.scale, 0.6 * weapon.scale), 
+                new THREE.MeshBasicMaterial({color: weapon.color})
+            );
+            bMesh.position.copy(startPos);
+            bMesh.lookAt(startPos.clone().add(direction));
+            scene.add(bMesh);
+            
+            bullets.push({ 
+                mesh: bMesh, 
+                velocity: direction.multiplyScalar(weapon.speed), 
+                life: 40,
+                damage: weapon.damage,
+                isPlayerBullet: true 
+            });
+        }
+
+        function onKeyDown(e) {
+            if(e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = true;
+            if(e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = true;
+            if(e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = true;
+            if(e.code === 'KeyD' || e.code === 'ArrowRight') moveRight = true;
+            if(e.code === 'Space') shoot();
+        }
+        function onKeyUp(e) {
+            if(e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = false;
+            if(e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = false;
+            if(e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = false;
+            if(e.code === 'KeyD' || e.code === 'ArrowRight') moveRight = false;
+        }
+        function onMouseDown() { if (gameState === 'PLAYING') shoot(); }
+
+        let rotationX = 0;
+        function setupPointerLock() {
+            const el = document.body;
+            function start() {
+                if (gameState === 'MENU' || gameState === 'GAMEOVER') startGame();
+                isGameActive = true;
+                try { el.requestPointerLock(); } catch(e){}
+            }
+            startBtn.addEventListener('click', start);
+            restartBtn.addEventListener('click', start);
+
+            document.addEventListener('mousemove', e => {
+                if (isGameActive && player.mesh && !player.isDead) {
+                    player.mesh.rotation.y -= e.movementX * 0.002;
+                    player.cameraPivot.rotation.y -= e.movementX * 0.002;
+                    rotationX -= e.movementY * 0.002;
+                    rotationX = Math.max(-0.5, Math.min(0.5, rotationX));
+                    player.cameraPivot.rotation.x = rotationX;
+                }
+            });
+        }
+
+        function spawnAllies() {
+            allies.forEach(a => scene.remove(a.mesh));
+            allies = [];
+            allies.push(new Ally(-3, 2));
+            allies.push(new Ally(3, 2));
+            updateSquadStatus();
+        }
+
+        function updateSquadStatus() {
+            const aliveCount = allies.filter(a => !a.isDead).length;
+            squadStatus.innerText = `隊友存活: ${aliveCount}`;
+            squadStatus.style.color = aliveCount > 0 ? '#00a2ff' : '#ff0000';
+        }
+
+        function startGame() {
+            gameState = 'PLAYING';
+            score = 0;
+            player.health = 100;
+            player.killCount = 0;
+            player.isDead = false;
+            
+            // 關卡重置
+            currentLevel = 1;
+            levelKills = 0;
+            const config = levelConfig[0];
+            scene.background = new THREE.Color(config.bgColor);
+            scene.fog.color.setHex(config.fogColor);
+            levelInfo.innerText = `LEVEL 1: 0/${config.target}`;
+
+            updateHealthUI();
+            updateWeapon();
+            
+            scoreDisplay.innerText = "SCORE: 0";
+            
+            enemies.forEach(e => scene.remove(e.mesh));
+            enemies = [];
+            bullets.forEach(b => scene.remove(b.mesh));
+            bullets = [];
+            
+            player.mesh.position.set(0, 0, 0);
+            player.cameraPivot.position.set(0, 1.6, 0);
+            
+            spawnAllies();
+
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            isGameActive = false;
+            player.isDead = true;
+            try { document.exitPointerLock(); } catch(e){}
+            gameOverScreen.classList.remove('hidden');
+            endTitle.innerText = "任務失敗";
+            endTitle.style.color = "#ff9900";
+            finalScoreDisplay.innerText = `SCORE: ${score}`;
+        }
+
+        function updateHealthUI() {
+            healthBar.style.width = `${Math.max(0, player.health)}%`;
+            healthBar.style.backgroundColor = player.health < 30 ? '#ff0000' : '#00ff00';
+            healthText.innerText = `${Math.floor(Math.max(0, player.health))} / 100`;
+            if(player.health <= 0) document.body.style.backgroundColor = '#550000';
+            else document.body.style.backgroundColor = '#000';
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        let enemySpawnTimer = 0;
+        let gameState = 'MENU';
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isGameActive) return;
+
+            if (!player.isDead) {
+                player.direction.z = Number(moveForward) - Number(moveBackward);
+                player.direction.x = Number(moveRight) - Number(moveLeft);
+                player.direction.normalize();
+
+                if (moveForward || moveBackward || moveLeft || moveRight) {
+                    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.mesh.rotation.y);
+                    const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.mesh.rotation.y);
+                    const moveVec = new THREE.Vector3();
+                    if (moveForward) moveVec.add(forward);
+                    if (moveBackward) moveVec.sub(forward);
+                    if (moveRight) moveVec.add(right);
+                    if (moveLeft) moveVec.sub(right);
+                    moveVec.normalize().multiplyScalar(player.speed);
+                    player.mesh.position.add(moveVec);
+                    player.cameraPivot.position.copy(player.mesh.position);
+                    player.cameraPivot.position.y = 1.6;
+
+                    const t = Date.now() * 0.015;
+                    player.parts.leftLeg.rotation.x = Math.sin(t) * 0.5;
+                    player.parts.rightLeg.rotation.x = -Math.sin(t) * 0.5;
+                }
+            }
+
+            allies.forEach(ally => ally.update(player.mesh.position, enemies));
+
+            // 動態調整生成速度 based on Level
+            const currentConfig = levelConfig[currentLevel - 1];
+            // 隨著殺敵數稍微加快，但主要看關卡基礎值
+            // spawnRateBase 越小越快
+            // levelKills 也會讓該關卡內越來越快
+            const spawnThreshold = Math.max(20, currentConfig.spawnRateBase - (levelKills * 2) - (score/200));
+
+            enemySpawnTimer++;
+            if (enemySpawnTimer > spawnThreshold) {
+                const type = Math.random() < 0.3 ? 'ghost' : 'zombie';
+                enemies.push(new Enemy(type));
+                enemySpawnTimer = 0;
+            }
+
+            const targets = [];
+            if(!player.isDead) targets.push(player);
+            allies.forEach(a => { if(!a.isDead) targets.push(a); });
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                if (e.isDead) {
+                    enemies.splice(i, 1);
+                    continue;
+                }
+                e.update(targets);
+            }
+
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.mesh.position.add(b.velocity);
+                b.life--;
+
+                if (b.isPlayerBullet) {
+                    const raycaster = new THREE.Raycaster(b.mesh.position, b.velocity.clone().normalize());
+                    const dist = b.velocity.length();
+                    const enemyMeshes = enemies.map(e => e.mesh);
+                    const hits = raycaster.intersectObjects(enemyMeshes, true);
+                    
+                    if (hits.length > 0 && hits[0].distance <= dist) {
+                        let hitObj = hits[0].object;
+                        while(hitObj.parent && hitObj.parent.type !== 'Scene') hitObj = hitObj.parent;
+                        const enemy = enemies.find(e => e.mesh === hitObj);
+                        
+                        if (enemy) {
+                            createExplosion(hits[0].point, b.mesh.material.color);
+                            if(enemy.takeDamage(b.damage)) {
+                                score += 100;
+                                scoreDisplay.innerText = `SCORE: ${score}`;
+                                player.killCount++;
+                                
+                                // 關卡進度更新 (只有玩家殺的才算進度，比較有挑戰性，或者可以改成總殺敵)
+                                // 這裡設定為：只要敵人死了就算進關卡進度（包含隊友殺的，因為 checkLevelProgression 是在這裡觸發的話，要確保隊友殺的也有呼叫）
+                                // 修正：目前只有玩家子彈這區塊會加 player.killCount。
+                                // 為了通關順暢，我們這裡加 levelKills
+                                levelKills++;
+                                
+                                updateWeapon(); 
+                                checkLevelProgression(); // 檢查是否過關
+                            }
+                            scene.remove(b.mesh);
+                            bullets.splice(i, 1);
+                            continue;
+                        }
+                    }
+                }
+
+                if (b.life <= 0) {
+                    scene.remove(b.mesh);
+                    bullets.splice(i, 1);
+                }
+            }
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.mesh.position.add(p.velocity);
+                p.velocity.y -= 0.02;
+                if(p.mesh.position.y < 0) p.velocity.y *= -0.5;
+                p.life -= 0.02;
+                p.mesh.scale.setScalar(p.life);
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+        setupPointerLock();
+        animate();
+
+    </script>
+</body>
+</html>
